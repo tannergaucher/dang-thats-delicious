@@ -100,3 +100,48 @@ exports.getStoresByTag = async (req, res) => {
 
   res.render('tag', { tags, title: 'Tags', tag, stores });
 };
+
+exports.searchStores = async (req, res) => {
+                            //find from the name and description properties from whatever was passed in ?q=
+                            //use mongodb text operator
+  const stores = await Store
+  //first find stores
+  .find({
+    $text: {
+      $search: req.query.q
+    }
+  }, {
+    score: {$meta: 'textScore'}
+  })
+  //sort by descending order
+  .sort({
+    score: {$meta: 'textScore'}
+  })
+  //limit to n-stores
+  .limit(5)
+  res.json(stores)
+}
+
+exports.mapStores = async (req, res) => {
+  const coordinates = [req.query.lng, req.query.lat].map(parseFloat)
+  //query
+  const q = {
+    //search for stores where location is near lat & long
+    location: {
+      $near: {
+        $geometry: {
+          type: 'point',
+          coordinates: coordinates
+        },
+        $maxDistance: 10000 //in meters === 10km
+      }
+    }
+  }                                 //keep ajax req as slim as possible
+  const stores = await Store.find(q).select('slug name description location photo').limit(10)
+  res.json(stores)
+}
+
+exports.mapPage = (req, res) => {
+  res.render('map', {title: 'Map'} )
+}
+

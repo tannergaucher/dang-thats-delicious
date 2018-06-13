@@ -41,6 +41,17 @@ const storeSchema = new mongoose.Schema({
   }
 });
 
+//define our indexes : here we want name and description
+//make text  --> we can efficiently search within that 
+storeSchema.index({
+  name: 'text',
+  description: 'text'
+})
+
+//define location as geospatial: store metadata as geospatial, quickly search it
+storeSchema.index({location: '2dsphere'})
+
+
 storeSchema.pre('save', async function(next) {
   if (!this.isModified('name')) {
     next(); // skip it
