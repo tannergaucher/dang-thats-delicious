@@ -21,7 +21,12 @@ const userSchema = new Schema({
     trim: true
   },
   resetPasswordToken: String,
-  resetPasswordExpires: Date
+  resetPasswordExpires: Date,
+  hearts: [
+    //hearts is an array or ids related to a store. 
+    //when we populate hearts, will see all stores in this hears array. not just list of ids       
+    {type: mongoose.Schema.ObjectId, ref: 'Store'}
+  ]
 });
 
 userSchema.virtual('gravatar').get(function() {

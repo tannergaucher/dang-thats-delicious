@@ -39,6 +39,9 @@ const storeSchema = new mongoose.Schema({
     ref: 'User',
     required: 'You must supply an author'
   }
+}, {
+  toJson: {virtuals: true},
+  toObject: {virtuals: true}
 });
 
 //define our indexes : here we want name and description
@@ -58,14 +61,13 @@ storeSchema.pre('save', async function(next) {
     return; // stop this function from running
   }
   this.slug = slug(this.name);
-  // find other stores that have a slug of wes, wes-1, wes-2
+  // Make slugs unique: find other stores that have a slug of wes, make into wes-1, wes-2 etc.
   const slugRegEx = new RegExp(`^(${this.slug})((-[0-9]*$)?)$`, 'i');
   const storesWithSlug = await this.constructor.find({ slug: slugRegEx });
   if (storesWithSlug.length) {
     this.slug = `${this.slug}-${storesWithSlug.length + 1}`;
   }
   next();
-  // TODO make more resiliant so slugs are unique
 });
 
 storeSchema.statics.getTagsList = function() {
@@ -75,5 +77,45 @@ storeSchema.statics.getTagsList = function() {
     { $sort: { count: -1 } }
   ]);
 }
+
+storeSchema.statics.getTopStores = function() {
+  //aggregate is a query function, but for complex queries
+  return this.aggregate([
+    //look up stores and populate reviews
+    { $lookup: {from: 'reviews', localField: '_id', 
+      foreignField: 'store', as: 'reviews'}},
+    //filter for only items that have 2+ reviews
+    { $match: { 'reviews.1': {$exists: true}}}, 
+    //add the average reviews field
+    { $project: {
+      //mongodb v3.4: just use ADDFIELD
+      //create a new field called avgrating. set avg to each of reviews rating field (does the math for us)
+      photo: '$$ROOT.photo',
+      name: '$$ROOT.name',
+      reviews: '$$ROOT.reviews', 
+      slug: '$$ROOT.slug',
+      averageRating: { $avg: '$reviews.rating'}
+    }},
+    //sort by new field, highest reviews first
+    { $sort: {averageRating: -1 }},
+    //limit to 10 at most
+    { $limit: 10}
+  ])
+}
+
+// find reviews where the stores _id property === reviews store property
+storeSchema.virtual('reviews', {
+  ref: 'Review', //what model to link
+  localField: '_id', //which field on the review
+  foreignField: 'store'  //which field on the store
+});
+
+function autopopulate(next) {
+  this.populate('reviews');
+  next();
+}
+
+storeSchema.pre('find', autopopulate);
+storeSchema.pre('findOne', autopopulate);
 
 module.exports = mongoose.model('Store', storeSchema);

@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 const Store = mongoose.model('Store');
+const User = mongoose.model('User');
+
 const multer = require('multer');
 const jimp = require('jimp');
 const uuid = require('uuid');
@@ -43,7 +45,6 @@ exports.resize = async (req, res, next) => {
 };
 
 exports.createStore = async (req, res) => {
-  
   req.body.author = req.user._id;
   const store = await (new Store(req.body)).save();
   req.flash('success', `Successfully Created ${store.name}. Care to leave a review?`);
@@ -51,9 +52,29 @@ exports.createStore = async (req, res) => {
 };
 
 exports.getStores = async (req, res) => {
+  const page = req.params.page || 1;
+  const limit = 4;
+  const skip = (page * limit) - limit;
   // 1. Query the database for a list of all stores
-  const stores = await Store.find();
-  res.render('stores', { title: 'Stores', stores });
+  const storesPromise = Store
+    .find()
+    .skip(skip)
+    .limit(limit)
+    .sort({ created: 'desc' })
+    
+  const countPromise = Store.count();
+  
+  const [stores, count] = await Promise.all([storesPromise, countPromise])
+  
+  const pages = Math.ceil(count / limit);
+  if(!stores.length && skip) {
+     req.flash('info', `Hey! You asked for page ${page}. But that donut exist.
+     So I put you on page ${pages}`);
+     res.redirect(`/stores/page/${pages}`);
+     return;
+  }
+  
+  res.render('stores', { title: 'Stores', stores, page, pages, count });
 };
 
 //before user can edit store, first confirm that they are actual owner
@@ -86,7 +107,8 @@ exports.updateStore = async (req, res) => {
 };
 
 exports.getStoreBySlug = async (req, res, next) => {
-  const store = await Store.findOne({ slug: req.params.slug }).populate('author');
+  const store = await Store.findOne({ slug: req.params.slug }).
+    populate('author reviews');
   if (!store) return next();
   res.render('store', { store, title: store.name });
 };
@@ -97,7 +119,6 @@ exports.getStoresByTag = async (req, res) => {
   const tagsPromise = Store.getTagsList();
   const storesPromise = Store.find({ tags: tagQuery });
   const [tags, stores] = await Promise.all([tagsPromise, storesPromise]);
-
   res.render('tag', { tags, title: 'Tags', tag, stores });
 };
 
@@ -144,4 +165,33 @@ exports.mapStores = async (req, res) => {
 exports.mapPage = (req, res) => {
   res.render('map', {title: 'Map'} )
 }
+
+exports.heartStore = async (req, res) => {
+  //list of persons stores: if they have it already - remove it. if they dont have it, add it. Sort of toggle
+  const hearts = req.user.hearts.map(obj => obj.toString());
+  const operator = hearts.includes(req.params.id) ? '$pull' : '$addToSet';
+  const user = await User
+  .findByIdAndUpdate(req.user._id,
+    {[operator]: {hearts: req.params.id }},
+    //return the updated user, rather than the previous user
+    {new: true}
+   )
+  res.json(user);
+}
+
+exports.getHearts = async (req, res) => {
+  const stores = await Store.find({
+    //where id property of the store is in req.user.hearts
+    _id: { $in: req.user.hearts }
+  });
+  //pass list of stores to stores url
+  res.render('stores', {title: 'Hearted Stores', stores})
+}
+ 
+exports.getTopStores = async (req, res) => {
+  //make up a new method here: getTopStores()
+  const stores = await Store.getTopStores();
+  res.render('topStores', {stores, title: 'Top Stores'})
+}
+
 
